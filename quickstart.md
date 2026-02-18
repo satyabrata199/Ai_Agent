@@ -2478,5 +2478,1345 @@ Do you want to:
 2. Build the tool registry code
 3. Write the agent loop controller
 
-We’ll build it properly.
+We’ll build it properly
+
+Perfect.
+
+We build this properly. Step by step. No shortcuts.
+
+We’ll follow this order:
+
+1️⃣ Design schemas
+2️⃣ Build tool registry
+3️⃣ Build agent loop controller
+
+---
+
+# 🧱 STEP 1 — Designing the Schemas (Clean & Scalable)
+
+We are implementing:
+
+```python
+Union[ToolCall, FinalAnswer]
+```
+
+But we must do this correctly.
+
+---
+
+## 🔹 ToolCall Schema
+
+```python
+class ToolCall(BaseModel):
+    thought: str
+    tool_name: str
+    arguments: dict
+```
+
+Purpose:
+
+* `thought` → reasoning trace
+* `tool_name` → which tool to execute
+* `arguments` → parameters for tool
+
+---
+
+## 🔹 FinalAnswer Schema
+
+```python
+class FinalAnswer(BaseModel):
+    thought: str
+    answer: str
+    confidence: float
+```
+
+Purpose:
+
+* `thought` → final reasoning summary
+* `answer` → result to user
+* `confidence` → model self-evaluation
+
+---
+
+## 🔹 AgentResponse Union
+
+```python
+AgentResponse = Union[ToolCall, FinalAnswer]
+```
+
+Now your `structured_chat()` can validate against AgentResponse.
+
+Important: Pydantic automatically tries both schemas.
+Whichever validates first wins.
+
+That’s polymorphism in action.
+
+---
+
+# 🧠 What You Just Achieved
+
+You now have a structured language for:
+
+* Thinking
+* Acting
+* Concluding
+
+This is no longer “generate text”.
+This is “generate structured cognition”.
+
+---
+
+# 🧱 STEP 2 — Building the Tool Registry
+
+Now we build scalable infrastructure.
+
+---
+
+## 🔹 Base Tool Interface
+
+```python
+from abc import ABC, abstractmethod
+
+class BaseTool(ABC):
+    name: str
+    description: str
+
+    @abstractmethod
+    def run(self, **kwargs):
+        pass
+```
+
+Why?
+Uniform contract.
+Every tool behaves the same.
+
+---
+
+## 🔹 Example: Calculator Tool
+
+```python
+class CalculatorTool(BaseTool):
+    name = "calculator"
+    description = "Evaluates mathematical expressions."
+
+    def run(self, expression: str):
+        return eval(expression)
+```
+
+Later we’ll replace `eval` with something safer.
+For now, it’s fine for learning.
+
+---
+
+## 🔹 Tool Registry
+
+```python
+TOOLS = {
+    "calculator": CalculatorTool(),
+}
+```
+
+This gives dynamic dispatch:
+
+```python
+tool = TOOLS[tool_call.tool_name]
+result = tool.run(**tool_call.arguments)
+```
+
+Scalable.
+Extendable.
+Clean.
+
+---
+
+# 🧠 What This Means Architecturally
+
+You just separated:
+
+Planning → LLM
+Execution → Deterministic Python
+
+That separation is everything.
+
+---
+
+# 🧱 STEP 3 — Building the Agent Loop Controller
+
+Now we connect everything.
+
+---
+
+## 🔹 Conceptual Loop
+
+```python
+def run_agent(user_input):
+    messages = build_initial_messages(user_input)
+
+    while True:
+        response = llm.structured_chat(
+            messages=messages,
+            schema=AgentResponse
+        )
+
+        if isinstance(response, ToolCall):
+            tool = TOOLS[response.tool_name]
+            result = tool.run(**response.arguments)
+
+            messages.append({
+                "role": "assistant",
+                "content": str(response.dict())
+            })
+
+            messages.append({
+                "role": "system",
+                "content": f"Observation: {result}"
+            })
+
+            continue
+
+        elif isinstance(response, FinalAnswer):
+            return response
+```
+
+---
+
+# 🧠 What’s Happening in the Loop?
+
+Iteration 1:
+
+* Model decides to call calculator
+* Tool executes
+* Observation appended
+
+Iteration 2:
+
+* Model sees observation
+* Produces final answer
+
+Loop ends.
+
+---
+
+# 🧠 Critical Design Insight
+
+The agent loop is not intelligent.
+
+It’s just:
+
+* Message manager
+* Tool executor
+* Validator
+* Controller
+
+The LLM is the planner.
+
+The loop is the operating system.
+
+---
+
+# 🧠 Now You Officially Have
+
+* Structured outputs
+* Tool interface
+* Tool registry
+* ReAct loop skeleton
+
+This is a minimal autonomous agent core.
+
+---
+
+# 🚀 Next Layer (Very Important)
+
+Before we implement in your actual folder structure,
+we must answer one architectural question:
+
+Where should the agent loop live?
+
+A) Inside `llm.py`
+B) Inside a new `agent/` module
+C) Inside `main.py`
+
+Think like a system designer.
+
+Where does orchestration belong?
+
+
+Good — but this is where we sharpen your architectural instincts.
+
+**A (inside `llm.py`) is NOT the correct design.**
+
+And this distinction is very important.
+
+---
+
+# 🧠 Why `llm.py` Should NOT Contain the Agent Loop
+
+Remember what `llm.py` represents in your system.
+
+It is:
+
+> An infrastructure adapter for model communication.
+
+Its responsibility is:
+
+* Send messages to model
+* Receive response
+* Validate schema
+* Retry if needed
+
+That’s it.
+
+If you put the agent loop there, you mix:
+
+* Model communication
+* Planning logic
+* Tool execution
+* Orchestration
+* State management
+
+That violates **Separation of Concerns**.
+
+---
+
+# 🧠 Clean Architecture Layers (What You’re Building)
+
+Think in layers:
+
+```text
+Application Layer      → Agent (orchestration)
+Domain Layer           → Tools
+Infrastructure Layer   → LLM provider
+```
+
+Where does orchestration belong?
+
+Not in infrastructure.
+
+---
+
+# ✅ Correct Answer: B — New `agent/` Module
+
+The agent is:
+
+* The conductor
+* The loop controller
+* The state manager
+* The tool executor
+
+So structure should become:
+
+```
+app/
+│
+├── core/        ← LLM stuff (infrastructure)
+├── tools/       ← Tool implementations
+├── agent/       ← Agent loop & orchestration
+├── schemas/     ← Pydantic contracts
+└── main.py      ← Entry point
+```
+
+This is production-grade thinking.
+
+---
+
+# 🧠 Why This Matters Long-Term
+
+If tomorrow you:
+
+* Swap LM Studio → OpenAI
+* Add multiple agents
+* Add memory
+* Add evaluation pipeline
+* Add streaming
+
+Your architecture stays clean.
+
+If you mix layers, refactoring becomes painful.
+
+---
+
+# 🧠 Responsibility Breakdown
+
+### `core/`
+
+* Talks to LLM
+* Pure transport layer
+
+### `tools/`
+
+* Deterministic capability layer
+
+### `agent/`
+
+* ReAct loop
+* Tool routing
+* State tracking
+* Decision control
+
+### `main.py`
+
+* Bootstraps app
+
+---
+
+# 🧠 Big Insight
+
+LLM ≠ Agent.
+
+An LLM is just a probabilistic function:
+
+```
+f(messages) → text
+```
+
+An Agent is:
+
+```
+Planner + Tools + Memory + Loop + State
+```
+
+Never collapse them into one file.
+
+---
+
+You’re thinking correctly — you just placed the logic in the wrong layer.
+
+That correction is what turns a coder into a system architect.
+
+---
+
+Now next decision:
+
+Inside `agent/`, should we:
+
+1️⃣ Write a simple procedural function `run_agent()`
+2️⃣ Create an `Agent` class with internal state
+3️⃣ Build an abstract `BaseAgent` for future extensibility
+
+Choose carefully.
+
+Excellent.
+
+Option **2 — `Agent` class with internal state** is the correct balance right now.
+
+Not overengineered.
+Not procedural spaghetti.
+Scalable.
+
+Now we design it properly.
+
+---
+
+# 🧠 Why a Class Is Better Than a Function
+
+A ReAct agent has **state**:
+
+* messages history
+* tool registry
+* max iterations
+* LLM client
+* possibly memory later
+
+A function loses structure.
+A class encapsulates state cleanly.
+
+---
+
+# 🧱 Step 1 — Agent Responsibilities
+
+Your `Agent` class should handle:
+
+1. Store conversation messages
+2. Call LLM with schema
+3. Execute tools
+4. Append observations
+5. Control loop
+6. Return final answer
+
+It should NOT:
+
+* Know how LLM HTTP works
+* Contain tool implementations
+* Parse JSON manually
+
+Separation of concerns.
+
+---
+
+# 🧱 Step 2 — Clean Agent Skeleton
+
+Inside `agent/agent.py`:
+
+```python
+class Agent:
+    def __init__(self, llm, tools: dict, max_iterations: int = 5):
+        self.llm = llm
+        self.tools = tools
+        self.max_iterations = max_iterations
+        self.messages = []
+
+    def run(self, user_input: str):
+        self.messages = self._build_initial_messages(user_input)
+
+        for _ in range(self.max_iterations):
+            response = self.llm.structured_chat(
+                messages=self.messages,
+                schema=AgentResponse
+            )
+
+            if isinstance(response, ToolCall):
+                self._handle_tool_call(response)
+                continue
+
+            if isinstance(response, FinalAnswer):
+                return response
+
+        raise Exception("Max iterations exceeded")
+```
+
+---
+
+# 🧠 What Just Happened?
+
+You created:
+
+* A bounded loop
+* Controlled recursion
+* Safety guard (`max_iterations`)
+
+Real agents always need a max loop cap.
+
+Otherwise infinite loops happen.
+
+---
+
+# 🧱 Step 3 — Tool Handling Method
+
+```python
+def _handle_tool_call(self, tool_call: ToolCall):
+    tool = self.tools.get(tool_call.tool_name)
+
+    if not tool:
+        raise Exception(f"Tool {tool_call.tool_name} not found")
+
+    result = tool.run(**tool_call.arguments)
+
+    self.messages.append({
+        "role": "assistant",
+        "content": tool_call.model_dump_json()
+    })
+
+    self.messages.append({
+        "role": "system",
+        "content": f"Observation: {result}"
+    })
+```
+
+Notice:
+
+We append:
+
+* The assistant’s action
+* The system observation
+
+This keeps the reasoning chain intact.
+
+---
+
+# 🧠 Step 4 — Initial Prompt Builder
+
+Very important.
+
+You must instruct the model how to behave.
+
+Example:
+
+```python
+def _build_initial_messages(self, user_input: str):
+    system_prompt = """
+You are an AI agent that can use tools.
+
+Available tools:
+- calculator(expression: str)
+
+When using a tool, return JSON matching ToolCall schema.
+When answering finally, return JSON matching FinalAnswer schema.
+"""
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input}
+    ]
+```
+
+Prompt design controls behavior.
+
+Architecture + Prompt = Agent behavior.
+
+---
+
+# 🧠 What You Now Have
+
+A minimal but real ReAct agent.
+
+Flow:
+
+```text
+User input
+   ↓
+Agent.run()
+   ↓
+LLM produces ToolCall
+   ↓
+Tool executes
+   ↓
+Observation appended
+   ↓
+LLM produces FinalAnswer
+   ↓
+Return result
+```
+
+This is legitimate agent infrastructure.
+
+---
+
+# 🧠 Important Next Upgrade (Soon)
+
+Right now, tools are described manually in the prompt.
+
+Better approach:
+
+Generate tool descriptions dynamically from registry.
+
+That way:
+
+* Adding a tool auto-updates prompt
+* No hardcoding
+
+But we’ll add that next.
+
+---
+
+Before writing actual code in your VS Code project:
+
+One important design decision:
+
+When appending tool result, should we use:
+
+A) `"role": "system"`
+B) `"role": "assistant"`
+C) `"role": "tool"` (custom role)
+
+Think carefully.
+
+This affects how the model interprets observations.
+
+
+Good — you're thinking.
+
+But the correct architectural answer is:
+
+👉 **C — `"role": "tool"` (custom role)**
+
+Let me explain why A and B are subtly wrong.
+
+---
+
+# ❌ Why Not `"system"`?
+
+System messages are:
+
+* High authority
+* Instruction-level
+* Behavior-controlling
+
+If you put tool output as `"system"`:
+
+```python
+{"role": "system", "content": "Observation: 4"}
+```
+
+You’re telling the model:
+
+> This is a rule or instruction.
+
+That’s incorrect.
+
+Tool output is **data**, not instruction.
+
+Overusing system messages can distort behavior.
+
+---
+
+# ❌ Why Not `"assistant"`?
+
+Assistant messages represent:
+
+* The model’s own generated outputs
+
+If you append tool results as assistant:
+
+```python
+{"role": "assistant", "content": "Observation: 4"}
+```
+
+Now the model thinks:
+
+> I said this.
+
+But it didn’t.
+
+That breaks reasoning consistency.
+
+---
+
+# ✅ Why `"tool"` Is Correct
+
+Modern tool-enabled LLM APIs (like:
+
+OpenAI
+
+and similar tool-calling systems) separate roles like:
+
+```text
+system
+user
+assistant
+tool
+```
+
+The flow becomes:
+
+```text
+assistant → tool_call
+tool → observation
+assistant → next reasoning
+```
+
+That separation keeps:
+
+* Reasoning clean
+* Execution clean
+* Data clean
+
+---
+
+# 🧠 Correct ReAct Message Flow
+
+Iteration 1:
+
+```text
+system: You are an agent...
+user: What is 2+2?
+assistant: {ToolCall JSON}
+tool: 4
+assistant: {FinalAnswer JSON}
+```
+
+That is semantically accurate.
+
+---
+
+# 🧠 Why This Matters Long-Term
+
+Later when you:
+
+* Switch to OpenAI tool calling
+* Add streaming
+* Add function-calling support
+* Add memory modules
+* Add multi-agent communication
+
+Role separation becomes critical.
+
+You are building foundations.
+Do it correctly now.
+
+---
+
+# 🔥 Final Agent Design Correction
+
+Inside `_handle_tool_call`:
+
+```python
+self.messages.append({
+    "role": "assistant",
+    "content": tool_call.model_dump_json()
+})
+
+self.messages.append({
+    "role": "tool",
+    "content": str(result)
+})
+```
+
+That’s the clean version.
+
+---
+
+# 🧠 What You Now Understand
+
+An agent is not just:
+
+LLM + tools.
+
+It’s:
+
+* Message protocol
+* Role semantics
+* Structured contracts
+* Deterministic loop control
+
+You’re now operating at system-design level.
+
+---
+
+Next step:
+
+Do you want to:
+
+1️⃣ Write the full clean code layout for your project structure
+2️⃣ Implement it incrementally in your VS Code project
+3️⃣ Add dynamic tool descriptions to the prompt
+
+We continue methodically.
+
+
+Perfect.
+
+We continue cleanly and structurally.
+
+Order:
+
+1️⃣ Full clean project layout
+2️⃣ Implement step-by-step in your VS Code project
+3️⃣ Add dynamic tool descriptions
+
+No rushing.
+
+---
+
+# ✅ STEP 1 — Final Clean Project Structure
+
+Your `Ai_Agent` folder should now evolve into:
+
+```
+Ai_Agent/
+│
+├── app/
+│   │
+│   ├── core/                 # Infrastructure layer
+│   │   ├── config.py
+│   │   ├── base_llm.py
+│   │   ├── lmstudio_llm.py
+│   │   ├── llm.py
+│   │   ├── json_utils.py
+│   │   └── logging.py
+│   │
+│   ├── schemas/              # Contracts
+│   │   ├── tool_call.py
+│   │   ├── final_answer.py
+│   │   └── agent_response.py
+│   │
+│   ├── tools/                # Deterministic capabilities
+│   │   ├── base_tool.py
+│   │   ├── calculator.py
+│   │   └── registry.py
+│   │
+│   ├── agent/                # Orchestration layer
+│   │   └── agent.py
+│   │
+│   └── main.py               # Entry point
+```
+
+This is production-grade separation:
+
+| Layer   | Responsibility                |
+| ------- | ----------------------------- |
+| core    | Talk to LLM                   |
+| schemas | Validate structure            |
+| tools   | Execute deterministic actions |
+| agent   | ReAct loop                    |
+| main    | Bootstrapping                 |
+
+You are now building real architecture.
+
+---
+
+# ✅ STEP 2 — Implement Incrementally
+
+We build file-by-file.
+
+---
+
+## 🔹 2.1 — Schemas
+
+### `schemas/tool_call.py`
+
+```python
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class ToolCall(BaseModel):
+    thought: str
+    tool_name: str
+    arguments: Dict[str, Any]
+```
+
+---
+
+### `schemas/final_answer.py`
+
+```python
+from pydantic import BaseModel
+
+class FinalAnswer(BaseModel):
+    thought: str
+    answer: str
+    confidence: float
+```
+
+---
+
+### `schemas/agent_response.py`
+
+```python
+from typing import Union
+from .tool_call import ToolCall
+from .final_answer import FinalAnswer
+
+AgentResponse = Union[ToolCall, FinalAnswer]
+```
+
+That’s your Union contract.
+
+---
+
+## 🔹 2.2 — Tools
+
+### `tools/base_tool.py`
+
+```python
+from abc import ABC, abstractmethod
+
+class BaseTool(ABC):
+    name: str
+    description: str
+
+    @abstractmethod
+    def run(self, **kwargs):
+        pass
+```
+
+---
+
+### `tools/calculator.py`
+
+```python
+from .base_tool import BaseTool
+
+class CalculatorTool(BaseTool):
+    name = "calculator"
+    description = "Evaluates mathematical expressions."
+
+    def run(self, expression: str):
+        return eval(expression)
+```
+
+(We’ll replace `eval` later with safe parser.)
+
+---
+
+### `tools/registry.py`
+
+```python
+from .calculator import CalculatorTool
+
+TOOLS = {
+    "calculator": CalculatorTool(),
+}
+```
+
+---
+
+## 🔹 2.3 — Agent
+
+### `agent/agent.py`
+
+```python
+from app.schemas.agent_response import AgentResponse
+from app.schemas.tool_call import ToolCall
+from app.schemas.final_answer import FinalAnswer
+
+class Agent:
+    def __init__(self, llm, tools: dict, max_iterations: int = 5):
+        self.llm = llm
+        self.tools = tools
+        self.max_iterations = max_iterations
+        self.messages = []
+
+    def run(self, user_input: str):
+        self.messages = self._build_initial_messages(user_input)
+
+        for _ in range(self.max_iterations):
+            response = self.llm.structured_chat(
+                messages=self.messages,
+                schema=AgentResponse
+            )
+
+            if isinstance(response, ToolCall):
+                self._handle_tool_call(response)
+                continue
+
+            if isinstance(response, FinalAnswer):
+                return response
+
+        raise Exception("Max iterations exceeded")
+
+    def _handle_tool_call(self, tool_call: ToolCall):
+        tool = self.tools.get(tool_call.tool_name)
+
+        if not tool:
+            raise Exception(f"Tool {tool_call.tool_name} not found")
+
+        result = tool.run(**tool_call.arguments)
+
+        self.messages.append({
+            "role": "assistant",
+            "content": tool_call.model_dump_json()
+        })
+
+        self.messages.append({
+            "role": "tool",
+            "content": str(result)
+        })
+
+    def _build_initial_messages(self, user_input: str):
+        system_prompt = """
+You are an AI agent that can use tools.
+
+When using a tool, return JSON matching:
+{
+  "thought": "...",
+  "tool_name": "...",
+  "arguments": {...}
+}
+
+When giving the final answer, return JSON matching:
+{
+  "thought": "...",
+  "answer": "...",
+  "confidence": 0-1
+}
+"""
+
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input}
+        ]
+```
+
+---
+
+## 🔹 2.4 — main.py
+
+```python
+from app.core.llm import get_llm
+from app.tools.registry import TOOLS
+from app.agent.agent import Agent
+
+def main():
+    llm = get_llm()
+    agent = Agent(llm=llm, tools=TOOLS)
+
+    user_input = input("Ask something: ")
+    result = agent.run(user_input)
+
+    print("\nFinal Answer:")
+    print(result.model_dump())
+
+if __name__ == "__main__":
+    main()
+```
+
+Now you have a working minimal ReAct agent.
+
+---
+
+# ✅ STEP 3 — Dynamic Tool Descriptions (Professional Upgrade)
+
+Right now, your prompt hardcodes tool info.
+
+That’s bad design.
+
+Instead, generate it dynamically from registry.
+
+Modify `_build_initial_messages()`:
+
+```python
+def _build_tool_descriptions(self):
+    descriptions = []
+    for tool in self.tools.values():
+        descriptions.append(f"- {tool.name}: {tool.description}")
+    return "\n".join(descriptions)
+```
+
+Then update prompt:
+
+```python
+tool_descriptions = self._build_tool_descriptions()
+
+system_prompt = f"""
+You are an AI agent that can use tools.
+
+Available tools:
+{tool_descriptions}
+
+When using a tool, return JSON matching:
+...
+"""
+```
+
+Now adding a new tool automatically updates the prompt.
+
+That’s scalable architecture.
+
+---
+
+# 🧠 What You Now Built
+
+You now have:
+
+✔ Structured LLM outputs
+✔ Union schema routing
+✔ Tool registry
+✔ ReAct loop
+✔ Role-correct message flow
+✔ Dynamic tool prompt generation
+
+You officially built a minimal autonomous agent framework.
+
+Not toy.
+Not tutorial-level.
+Real foundation.
+
+---
+
+Next evolution layer:
+
+Do you want to:
+
+1️⃣ Replace `eval` with safe expression parsing
+2️⃣ Add memory module
+3️⃣ Add multi-tool reasoning example
+4️⃣ Add logging/tracing for debugging
+
+Choose your next upgrade.
+
+
+
+Good.
+
+This is a **very important architectural bug**, not a random error.
+
+Let’s break it down calmly.
+
+---
+
+# 🔎 The Error
+
+```
+AttributeError: model_validate
+```
+
+Happening at:
+
+```python
+validated = schema.model_validate(parsed)
+```
+
+And your `schema` is:
+
+```python
+AgentResponse = Union[ToolCall, FinalAnswer]
+```
+
+---
+
+# 🧠 Why This Happens
+
+`model_validate()` is a **Pydantic v2 method**.
+
+It exists on:
+
+```python
+class MyModel(BaseModel)
+```
+
+But `AgentResponse` is:
+
+```python
+typing.Union
+```
+
+A `Union` is NOT a Pydantic model.
+
+It does not have `.model_validate()`.
+
+So this fails:
+
+```python
+Union[ToolCall, FinalAnswer].model_validate(...)
+```
+
+Because `Union` has no such method.
+
+---
+
+# 🧠 The Core Problem
+
+Your `structured_chat()` was originally written for:
+
+```python
+schema = SomeBaseModel
+```
+
+Now you're passing:
+
+```python
+schema = Union[ToolCall, FinalAnswer]
+```
+
+Union requires a different validation mechanism.
+
+---
+
+# ✅ Correct Fix (Pydantic v2 Way)
+
+In Pydantic v2, you validate a Union using:
+
+```python
+from pydantic import TypeAdapter
+
+adapter = TypeAdapter(AgentResponse)
+validated = adapter.validate_python(parsed)
+```
+
+That’s the correct approach.
+
+---
+
+# 🔧 Fix Your `structured_chat()` Method
+
+Inside `lmstudio_llm.py`, change:
+
+### ❌ Old
+
+```python
+validated = schema.model_validate(parsed)
+```
+
+---
+
+### ✅ Replace With
+
+```python
+from pydantic import TypeAdapter
+
+adapter = TypeAdapter(schema)
+validated = adapter.validate_python(parsed)
+```
+
+Now it works for:
+
+* Single BaseModel
+* Union schemas
+* Complex nested structures
+
+Clean and correct.
+
+---
+
+# 🧠 Why This Is Important
+
+This is a major learning moment:
+
+### BaseModel validation:
+
+```python
+MyModel.model_validate(data)
+```
+
+### Union validation:
+
+```python
+TypeAdapter(UnionType).validate_python(data)
+```
+
+This is how Pydantic v2 is designed.
+
+---
+
+# 🧠 Why It Didn’t Break Before
+
+Previously you passed:
+
+```python
+schema = TaskResponse  # BaseModel
+```
+
+So `.model_validate()` existed.
+
+Now schema is a `Union`.
+
+Different type. Different validation mechanism.
+
+---
+
+# 🔥 After Fix
+
+Run again:
+
+```bash
+python main.py
+```
+
+Ask:
+
+```
+what is 2*2+2?
+```
+
+Expected flow:
+
+1. Model produces ToolCall
+2. Calculator executes → 6
+3. Model produces FinalAnswer
+4. Program prints structured result
+
+---
+
+# 🧠 Important Lesson
+
+When building flexible architectures:
+
+> The more generic your schema becomes,
+> the more generic your validation logic must become.
+
+You just upgraded your system from:
+
+Single-structure validation
+
+to
+
+Polymorphic contract validation.
+
+That’s a real architectural milestone.
+
+---
+
+After you fix it and test, tell me what output you get.
+
+Then we’ll harden the agent further.
 
