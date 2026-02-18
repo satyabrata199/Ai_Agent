@@ -2092,3 +2092,190 @@ This determines your agent’s flexibility.
 
 
 
+Correct.
+
+Option **B — Union Schema** is the real agent design.
+
+Now let’s go deep into *why*.
+
+---
+
+# 🧠 Why Union Schema Is Superior
+
+Instead of forcing everything into one rigid structure:
+
+```json
+{
+  "type": "tool_call" | "final_answer",
+  ...
+}
+```
+
+You define two completely different contracts:
+
+```python
+Union[ToolCall, FinalAnswer]
+```
+
+This gives you:
+
+* Clear separation of intent
+* Strong validation
+* Cleaner control flow
+* Better retry correction
+* Extensibility
+
+---
+
+# 🧠 Conceptually What Happens
+
+Your structured pipeline becomes:
+
+```
+LLM Output
+    ↓
+Extract JSON
+    ↓
+Parse JSON
+    ↓
+Validate against Union Schema
+        ↙             ↘
+   ToolCall       FinalAnswer
+        ↓               ↓
+ Execute tool        Return result
+```
+
+This is elegant.
+
+---
+
+# 🧠 Why Option A Becomes Messy
+
+If you use:
+
+```json
+{
+  "type": "...",
+  "tool_name": "...",
+  "answer": "...",
+  "arguments": {...}
+}
+```
+
+Now you must:
+
+* Check `type`
+* Conditionally validate fields
+* Manually enforce required keys
+* Write logic to ensure consistency
+
+You lose Pydantic’s power.
+
+Union gives you automatic dispatch.
+
+---
+
+# 🧠 What This Unlocks
+
+With Union, you can later add:
+
+```python
+Union[
+    ToolCall,
+    FinalAnswer,
+    ClarificationRequest,
+    ErrorResponse,
+    PlanStep,
+    MemoryWrite
+]
+```
+
+Now your agent can:
+
+* Ask clarifying questions
+* Plan multiple steps
+* Store memory
+* Signal failure
+* Return structured outputs
+
+All without rewriting the core loop.
+
+That’s extensibility.
+
+---
+
+# 🧠 Real-World Parallel
+
+Modern agent frameworks (like those built on top of):
+
+LangChain
+LlamaIndex
+
+Internally rely on variations of this idea.
+
+But you’re building it manually.
+
+That’s how you actually understand it.
+
+---
+
+# 🧠 The Control Loop With Union
+
+Your agent loop will look like this:
+
+```python
+while True:
+    response = llm.structured_chat(..., schema=AgentResponse)
+
+    if isinstance(response, ToolCall):
+        result = execute_tool(response)
+        append_observation(result)
+        continue
+
+    if isinstance(response, FinalAnswer):
+        return response
+```
+
+Simple.
+Deterministic.
+Clean.
+
+---
+
+# 🧠 Important Design Decision
+
+Now here is the next architectural question:
+
+When the model calls a tool, should it:
+
+A) Immediately return tool JSON only
+B) Include reasoning ("thought") alongside the tool call
+
+Example:
+
+Option 1:
+
+```json
+{
+  "tool_name": "calculator",
+  "arguments": {"expression": "2+2"}
+}
+```
+
+Option 2:
+
+```json
+{
+  "thought": "I need to calculate 2+2",
+  "tool_name": "calculator",
+  "arguments": {"expression": "2+2"}
+}
+```
+
+Which is better for:
+
+* Debugging
+* Transparency
+* Multi-step reasoning
+
+And why?
